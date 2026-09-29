@@ -880,7 +880,10 @@
         if (e.code === "Space" || e.code.startsWith("Arrow")) e.preventDefault(); });
       addEventListener("keyup", (e) => { G.keys[e.code] = false; });
       addEventListener("blur", () => { G.keys = {}; });   // cmd-tab away must not leave W held down
-      el.addEventListener("click", () => { if (!locked()) el.requestPointerLock(); });
+      // listen on the document, not the canvas: the "click to play" overlay sits on top of the
+      // canvas and would swallow the click. Chrome rejects a re-lock right after Esc; ignore it.
+      document.addEventListener("click", () => { if (document.pointerLockElement === el) return;
+        const r = el.requestPointerLock(); if (r && r.catch) r.catch(() => {}); });
       addEventListener("mousemove", (e) => { if (!locked()) return;
         G.yaw -= e.movementX * G.sens; G.pitch = Math.max(-1.55, Math.min(1.55, G.pitch - e.movementY * G.sens)); });
       addEventListener("mousedown", (e) => { if (!locked()) return;

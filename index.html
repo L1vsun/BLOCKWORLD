@@ -53,6 +53,8 @@ if (view) { help.remove(); g.cam(view[0], view[1], view[2], view[3], view[4]); i
 else {
   g.bindInput(c);
   document.addEventListener("pointerlockchange", () => help.style.display = document.pointerLockElement === c ? "none" : "flex");
+  // browsers can refuse the capture (e.g. Chrome right after Esc, Safari if the window isn't focused)
+  document.addEventListener("pointerlockerror", () => say("mouse capture was blocked, click again"));
   addEventListener("keydown", (e) => {
     if (e.code === "KeyG") applyPreset(ORDER[(ORDER.indexOf(preset) + 1) % ORDER.length]);
     if (e.code === "BracketLeft" || e.code === "BracketRight") {
