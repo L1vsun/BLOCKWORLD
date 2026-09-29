@@ -2,16 +2,22 @@
 <html><head><meta charset="utf-8"><title>BLOCKWORLD</title>
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <style>
-html,body{margin:0;height:100%;overflow:hidden;background:#000}
-#c{display:block;width:100vw;height:100vh}
+html,body{margin:0;height:100%;overflow:hidden;background:#000;overscroll-behavior:none}
+#c{display:block;width:100vw;height:100vh;touch-action:none}
 #ui{position:fixed;inset:0;pointer-events:none}
 #help{position:fixed;inset:0;display:flex;align-items:center;justify-content:center;background:rgba(0,0,0,.55);color:#fff;font:14px/1.9 ui-monospace,Menlo,monospace;text-align:center;cursor:pointer}
 #help b{font-size:28px;letter-spacing:.08em;display:block;margin-bottom:12px}
+#help i{font-style:normal;color:#aab3c0;font-size:12.5px}
 #hud{position:fixed;left:10px;top:8px;color:#fff;font:12px/1.5 ui-monospace,Menlo,monospace;text-shadow:0 1px 0 #000;pointer-events:none;white-space:pre}
+#toast{position:fixed;left:50%;top:18%;transform:translateX(-50%);color:#fff;font:600 14px ui-monospace,Menlo,monospace;letter-spacing:.06em;text-shadow:0 1px 3px #000;pointer-events:none;opacity:0}
 </style></head>
 <body>
-<canvas id="c"></canvas><div id="ui"></div><div id="hud"></div>
-<div id="help"><div><b>BLOCKWORLD</b>click to play<br>WASD move · SPACE jump · SHIFT sprint · F fly (SPACE/C up/down)<br>LMB break · RMB place · 1-9 / wheel pick block · T skip time · ESC release mouse</div></div>
+<canvas id="c"></canvas><div id="ui"></div><div id="hud"></div><div id="toast"></div>
+<div id="help"><div><b>BLOCKWORLD</b>click to play<br>
+WASD move · SPACE jump · SHIFT sprint · F fly (SPACE/C up/down)<br>
+click break · right click / two-finger click / ctrl+click place<br>
+no mouse? <b style="display:inline;font-size:14px;letter-spacing:0">Q</b> break · <b style="display:inline;font-size:14px;letter-spacing:0">E</b> place · 1-9 / scroll pick block<br>
+<i>G graphics (high / balanced / battery) · [ ] look speed · T skip time · ESC pause</i></div></div>
 <script src="vendor/three.bundle.js"></script>
 <script src="game.js"></script>
 <script>
@@ -19,21 +25,65 @@ html,body{margin:0;height:100%;overflow:hidden;background:#000}
 const c = document.getElementById("c");
 const hash = location.hash.slice(1);
 const view = hash.startsWith("view=") ? hash.slice(5).split(",").map(Number) : null;
-const g = Blockworld.create(c, { w: innerWidth, h: innerHeight, cssSize: false });
+
+// ---- settings survive reloads (storage can be blocked: private windows, strict modes)
+const store = { get(k, d) { try { const v = localStorage.getItem("bw." + k); return v == null ? d : JSON.parse(v); } catch (e) { return d; } },
+                set(k, v) { try { localStorage.setItem("bw." + k, JSON.stringify(v)); } catch (e) {} } };
+// graphics presets. Retina laptops default to "balanced": rendering 2x pixels is what makes laptops hot
+const DPR = window.devicePixelRatio || 1;
+const PRESETS = {
+  high:     { shadow: 4096, cap: Math.min(DPR, 2) },
+  balanced: { shadow: 2048, cap: Math.min(DPR, 1.5) },
+  battery:  { shadow: 0,    cap: 1 },
+};
+const ORDER = ["high", "balanced", "battery"];
+let preset = store.get("preset", DPR > 1 ? "balanced" : "high");
+if (!PRESETS[preset]) preset = "balanced";
+let scale = PRESETS[preset].cap;                 // current render scale, adapted to hold ~60 fps
+
+const g = Blockworld.create(c, { w: innerWidth, h: innerHeight, cssSize: false, dpr: scale, shadow: PRESETS[preset].shadow });
 window.game = g; // poke at it from the devtools console: game.setTime(0.95), game.placeBlock(...)
+g.sens = store.get("sens", 0.0024);
 g.ui(document.getElementById("ui"));
-const help = document.getElementById("help"), hud = document.getElementById("hud");
+const help = document.getElementById("help"), hud = document.getElementById("hud"), toast = document.getElementById("toast");
+let toastT = 0; const say = (s) => { toast.textContent = s; toastT = 1.6; };
+function applyPreset(p) { preset = p; store.set("preset", p); scale = PRESETS[p].cap; g.setShadows(PRESETS[p].shadow); g.setPixelRatio(scale); say("graphics: " + p); }
+
 if (view) { help.remove(); g.cam(view[0], view[1], view[2], view[3], view[4]); if (view.length > 5) g.setTime(view[5]); g.showHeld = false; }
-else { g.bindInput(c); document.addEventListener("pointerlockchange", () => help.style.display = document.pointerLockElement === c ? "none" : "flex"); }
+else {
+  g.bindInput(c);
+  document.addEventListener("pointerlockchange", () => help.style.display = document.pointerLockElement === c ? "none" : "flex");
+  addEventListener("keydown", (e) => {
+    if (e.code === "KeyG") applyPreset(ORDER[(ORDER.indexOf(preset) + 1) % ORDER.length]);
+    if (e.code === "BracketLeft" || e.code === "BracketRight") {
+      g.sens = Math.min(0.008, Math.max(0.0008, g.sens * (e.code === "BracketRight" ? 1.15 : 1 / 1.15)));
+      store.set("sens", g.sens); say("look speed " + Math.round(g.sens / 0.0024 * 100) + "%");
+    }
+  });
+}
 addEventListener("resize", () => g.resize(innerWidth, innerHeight));
-let last = performance.now(), fpsN = 0, fpsT = 0, fps = 0;
+
+// ---- frame loop: adaptive render scale + half rate while paused (battery)
+let last = performance.now(), fpsN = 0, fpsT = 0, fps = 60, skip = false, lowFor = 0, highFor = 0;
 function frame(now) {
+  requestAnimationFrame(frame);
+  const paused = !view && document.pointerLockElement !== c;
+  if (paused && (skip = !skip)) return;           // menu open: render every other frame
   const dt = Math.min(0.05, (now - last) / 1000); last = now;
   if (!view) g.setTime((g.tod + dt / 1200) % 1);
   g.update(dt); g.render();
-  fpsN++; fpsT += dt; if (fpsT > 0.5) { fps = Math.round(fpsN / fpsT); fpsN = 0; fpsT = 0; }
-  hud.textContent = `${fps} fps\nxyz ${g.pos.x.toFixed(1)} ${g.pos.y.toFixed(1)} ${g.pos.z.toFixed(1)}${g.fly ? "  [fly]" : ""}\n${g.stats.blocks.toLocaleString()} blocks · ${g.stats.faces.toLocaleString()} faces`;
-  requestAnimationFrame(frame);
+  fpsN++; fpsT += dt;
+  if (fpsT > 0.5) {
+    fps = Math.round(fpsN / fpsT); fpsN = 0; fpsT = 0;
+    if (!paused && !view) {
+      // drop resolution after ~1.5 s under 48 fps; creep back up after ~4 s above 58
+      lowFor = fps < 48 ? lowFor + 1 : 0; highFor = fps > 58 ? highFor + 1 : 0;
+      if (lowFor >= 3 && scale > 0.6) { scale = Math.max(0.6, +(scale * 0.85).toFixed(2)); g.setPixelRatio(scale); lowFor = 0; }
+      if (highFor >= 8 && scale < PRESETS[preset].cap) { scale = Math.min(PRESETS[preset].cap, +(scale * 1.1).toFixed(2)); g.setPixelRatio(scale); highFor = 0; }
+    }
+  }
+  toastT = Math.max(0, toastT - dt); toast.style.opacity = Math.min(1, toastT * 2);
+  hud.textContent = `${fps} fps · ${preset} · ${Math.round(scale * 100)}% res\nxyz ${g.pos.x.toFixed(1)} ${g.pos.y.toFixed(1)} ${g.pos.z.toFixed(1)}${g.fly ? "  [fly]" : ""}\n${g.stats.blocks.toLocaleString()} blocks · ${g.stats.faces.toLocaleString()} faces`;
 }
 requestAnimationFrame(frame);
 </script>

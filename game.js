@@ -850,27 +850,51 @@
       held.quaternion.copy(camera.quaternion).multiply(new T.Quaternion().setFromEuler(new T.Euler(-0.12 - sw * 0.7, 0.72, 0.04)));
     };
     G.render = () => { if (composer) composer.render(); else { renderer.render(scene, camera); renderer.autoClear = false; renderer.clearDepth(); renderer.render(vmScene, camera); renderer.autoClear = true; } };
-    G.resize = (w, h) => { renderer.setSize(w, h, false); camera.aspect = w / h; camera.updateProjectionMatrix(); if (composer) composer.setSize(w, h); };
+    G.resize = (w, h) => { G.w = w; G.h = h; renderer.setSize(w, h, false); camera.aspect = w / h; camera.updateProjectionMatrix(); if (composer) composer.setSize(w, h); };
+    G.w = W; G.h = H;
+    // laptop knobs: render scale and shadow map size (0 = no shadows) can change while playing
+    G.setPixelRatio = (d) => { renderer.setPixelRatio(d); if (composer) composer.setPixelRatio(d); G.resize(G.w, G.h); };
+    G.setShadows = (size) => {
+      sun.castShadow = size > 0;
+      if (size > 0 && sun.shadow.mapSize.x !== size) { sun.shadow.mapSize.set(size, size); if (sun.shadow.map) { sun.shadow.map.dispose(); sun.shadow.map = null; } }
+    };
+    if (opts.shadow != null) G.setShadows(opts.shadow);
 
     // ---------- input (play mode)
+    G.sens = 0.0024;
     G.bindInput = (el) => {
       G.playing = true; G.camDirect = false;
+      const locked = () => document.pointerLockElement === el;
+      const doBreak = () => { const h = G.pick(); if (h) G.breakBlock(h.x, h.y, h.z); };
+      const doPlace = () => { const h = G.pick(); if (!h) return;
+        const px = h.x + h.face[0], py = h.y + h.face[1], pz = h.z + h.face[2];
+        const pb = { x0: G.pos.x - 0.3, x1: G.pos.x + 0.3, y0: G.pos.y, y1: G.pos.y + 1.8, z0: G.pos.z - 0.3, z1: G.pos.z + 0.3 };
+        const inter = px + 1 > pb.x0 && px < pb.x1 && py + 1 > pb.y0 && py < pb.y1 && pz + 1 > pb.z0 && pz < pb.z1;
+        if (!inter || !SOLID[HOTBAR[G.slot]]) G.placeBlock(px, py, pz, HOTBAR[G.slot]); };
       addEventListener("keydown", (e) => { G.keys[e.code] = true; if (e.code === "KeyF") { G.fly = !G.fly; G.vel.y = 0; }
         if (e.code.startsWith("Digit")) { const n = +e.code.slice(5); if (n >= 1 && n <= 9) G.select(n - 1); }
         if (e.code === "KeyT") G.setTime((G.tod + 0.125) % 1);
+        // trackpad-friendly: Q breaks, E places without clicking
+        if (locked() && !e.repeat && e.code === "KeyQ") doBreak();
+        if (locked() && !e.repeat && e.code === "KeyE") doPlace();
         if (e.code === "Space" || e.code.startsWith("Arrow")) e.preventDefault(); });
       addEventListener("keyup", (e) => { G.keys[e.code] = false; });
-      el.addEventListener("click", () => { if (document.pointerLockElement !== el) el.requestPointerLock(); });
-      addEventListener("mousemove", (e) => { if (document.pointerLockElement !== el) return;
-        G.yaw -= e.movementX * 0.0024; G.pitch = Math.max(-1.55, Math.min(1.55, G.pitch - e.movementY * 0.0024)); });
-      addEventListener("mousedown", (e) => { if (document.pointerLockElement !== el) return; const h = G.pick(); if (!h) return;
-        if (e.button === 0) G.breakBlock(h.x, h.y, h.z);
-        else if (e.button === 2) { const px = h.x + h.face[0], py = h.y + h.face[1], pz = h.z + h.face[2];
-          const pb = { x0: G.pos.x - 0.3, x1: G.pos.x + 0.3, y0: G.pos.y, y1: G.pos.y + 1.8, z0: G.pos.z - 0.3, z1: G.pos.z + 0.3 };
-          const inter = px + 1 > pb.x0 && px < pb.x1 && py + 1 > pb.y0 && py < pb.y1 && pz + 1 > pb.z0 && pz < pb.z1;
-          if (!inter || !SOLID[HOTBAR[G.slot]]) G.placeBlock(px, py, pz, HOTBAR[G.slot]); } });
+      addEventListener("blur", () => { G.keys = {}; });   // cmd-tab away must not leave W held down
+      el.addEventListener("click", () => { if (!locked()) el.requestPointerLock(); });
+      addEventListener("mousemove", (e) => { if (!locked()) return;
+        G.yaw -= e.movementX * G.sens; G.pitch = Math.max(-1.55, Math.min(1.55, G.pitch - e.movementY * G.sens)); });
+      addEventListener("mousedown", (e) => { if (!locked()) return;
+        // macOS: ctrl+click is the secondary click
+        if (e.button === 2 || (e.button === 0 && e.ctrlKey)) doPlace(); else if (e.button === 0) doBreak(); });
       addEventListener("contextmenu", (e) => e.preventDefault());
-      addEventListener("wheel", (e) => G.select(G.slot + (e.deltaY > 0 ? 1 : -1)));
+      // one hotbar step per mouse-wheel notch (~100px, or 1 "line") and per ~60px of trackpad
+      // scroll; the cooldown stops a trackpad momentum flick from spinning through every slot
+      let wheelAcc = 0, lastStep = 0;
+      addEventListener("wheel", (e) => { if (!locked()) return; e.preventDefault();
+        wheelAcc += e.deltaMode ? Math.sign(e.deltaY) * 100 : e.deltaY;
+        const now = performance.now();
+        if (Math.abs(wheelAcc) >= 60 && now - lastStep > 110) { G.select(G.slot + Math.sign(wheelAcc)); wheelAcc = 0; lastStep = now; }
+        else if (now - lastStep <= 110) wheelAcc = 0; }, { passive: false });
     };
 
     // ---------- UI: crosshair + hotbar with isometric block icons

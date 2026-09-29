@@ -12,6 +12,7 @@ The real session log, written by the model as it worked. All times are local, 20
 20:31-20:37          lighting tuned for the video: water specular colour, moonlight, ambient (3 constants)
 2026-09-29 20:37:49  video capture of the game started
 2026-09-29 20:59:01  packaged as this repo: index.html, README, licenses, screenshots
+2026-09-29 21:05:48  laptop pass: graphics presets (G), adaptive resolution, trackpad/Mac input, battery throttle; tested in Chromium + WebKit
 ```
 
 The two fixes at 20:31 were found by the model while checking its own renders. Nobody reported

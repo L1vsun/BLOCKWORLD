@@ -16,7 +16,8 @@ no follow-up messages, no hand edits to the code. See [How it was built](#how-it
 ## Play
 
 - **Locally:** clone the repo and open `index.html` in a modern browser. It works straight
-  from `file://` (tested in Chromium; Firefox and Safari should work but weren't tested).
+  from `file://` (tested in Chromium and WebKit, the Safari engine; Firefox should work but
+  wasn't tested).
 - **Online:** turn on GitHub Pages (Settings → Pages → Deploy from a branch → `main` / root).
   The game is then live at `https://<your-username>.github.io/<repo-name>/`.
 
@@ -28,10 +29,25 @@ Click to capture the mouse. Esc releases it.
 | Space | jump (in fly mode: up) |
 | Shift | sprint |
 | F | toggle fly mode (Space up, C down) |
-| Left click | break the block you're looking at |
-| Right click | place the selected block |
-| 1–9 / wheel | pick a block from the hotbar |
+| Left click / Q | break the block you're looking at |
+| Right click / two-finger click / ctrl+click / E | place the selected block |
+| 1–9 / wheel / two-finger scroll | pick a block from the hotbar |
+| G | graphics: high / balanced / battery |
+| [ ] | look speed down / up |
 | T | skip time (+3 hours) |
+
+### On a laptop / Mac
+
+- **Retina screens start on *balanced*.** That's 1.5× resolution with 2048² shadows, not the
+  full 2× pixels that make laptops run hot. **G** switches between *high* (2×, 4096² shadows)
+  and *battery* (1×, no shadows). Your choice is remembered.
+- **Resolution adapts.** If fps stays under ~48, the render resolution steps down (to 60% at
+  the lowest). It climbs back up when there's headroom. The HUD shows the current level.
+- **Trackpad friendly.** Two-finger scroll steps the hotbar one slot at a time instead of
+  spinning. Ctrl+click works as right click. **Q** and **E** break and place without
+  clicking at all. **[ ]** adjusts look speed, and that's remembered too.
+- **Battery.** When paused (Esc), it renders at half rate. Cmd-tabbing away releases all keys,
+  so you don't come back walking.
 
 ## What's in it
 
@@ -67,11 +83,14 @@ running in Claude Code while the owner was away. These timestamps come from the 
 
 That's **12 min 19 s** from an empty file to a playtested game.
 
-Two things changed after that. For the post's video, three lighting constants were tuned
-(water specular colour, moonlight and ambient intensity). This repo's `index.html` is the
-original `play.html` with the asset path changed, `window.game` exposed and an Esc hint
-added. Both changes were
-made in the same session, also by the model.
+Changes after that, all made by the model in the same session:
+- For the post's video, three lighting constants were tuned (water specular colour,
+  moonlight and ambient intensity).
+- `index.html` started as the original `play.html` (asset path changed, `window.game`
+  exposed).
+- A laptop pass was added: graphics presets, adaptive resolution, trackpad and Mac input,
+  and a battery throttle. In `game.js` that's a 24-line patch covering `setPixelRatio`,
+  `setShadows` and input. The rest is in `index.html`.
 
 ## Poke at it
 
@@ -91,8 +110,8 @@ the screenshots were taken.
 - The world is a fixed 224 × 224 island. There's no infinite terrain or chunk streaming.
 - There's no saving. Edits reset on reload.
 - It's a sandbox, not survival: no inventory, crafting, mobs or health.
-- It's tuned for a decent GPU (4096² shadow map, about 470k faces). On a weak laptop, pass
-  `dpr: 1` to `Blockworld.create` in `index.html`.
+- It still draws about 470k faces. Very old integrated GPUs may sit at the bottom of the
+  adaptive range even on *battery*.
 
 ## License
 
