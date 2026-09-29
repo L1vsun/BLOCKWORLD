@@ -1,0 +1,40 @@
+<!doctype html>
+<html><head><meta charset="utf-8"><title>BLOCKWORLD</title>
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<style>
+html,body{margin:0;height:100%;overflow:hidden;background:#000}
+#c{display:block;width:100vw;height:100vh}
+#ui{position:fixed;inset:0;pointer-events:none}
+#help{position:fixed;inset:0;display:flex;align-items:center;justify-content:center;background:rgba(0,0,0,.55);color:#fff;font:14px/1.9 ui-monospace,Menlo,monospace;text-align:center;cursor:pointer}
+#help b{font-size:28px;letter-spacing:.08em;display:block;margin-bottom:12px}
+#hud{position:fixed;left:10px;top:8px;color:#fff;font:12px/1.5 ui-monospace,Menlo,monospace;text-shadow:0 1px 0 #000;pointer-events:none;white-space:pre}
+</style></head>
+<body>
+<canvas id="c"></canvas><div id="ui"></div><div id="hud"></div>
+<div id="help"><div><b>BLOCKWORLD</b>click to play<br>WASD move · SPACE jump · SHIFT sprint · F fly (SPACE/C up/down)<br>LMB break · RMB place · 1-9 / wheel pick block · T skip time · ESC release mouse</div></div>
+<script src="vendor/three.bundle.js"></script>
+<script src="game.js"></script>
+<script>
+// index.html#view=x,y,z,yaw,pitch[,tod] renders a fixed camera instead of play mode (screenshots)
+const c = document.getElementById("c");
+const hash = location.hash.slice(1);
+const view = hash.startsWith("view=") ? hash.slice(5).split(",").map(Number) : null;
+const g = Blockworld.create(c, { w: innerWidth, h: innerHeight, cssSize: false });
+window.game = g; // poke at it from the devtools console: game.setTime(0.95), game.placeBlock(...)
+g.ui(document.getElementById("ui"));
+const help = document.getElementById("help"), hud = document.getElementById("hud");
+if (view) { help.remove(); g.cam(view[0], view[1], view[2], view[3], view[4]); if (view.length > 5) g.setTime(view[5]); g.showHeld = false; }
+else { g.bindInput(c); document.addEventListener("pointerlockchange", () => help.style.display = document.pointerLockElement === c ? "none" : "flex"); }
+addEventListener("resize", () => g.resize(innerWidth, innerHeight));
+let last = performance.now(), fpsN = 0, fpsT = 0, fps = 0;
+function frame(now) {
+  const dt = Math.min(0.05, (now - last) / 1000); last = now;
+  if (!view) g.setTime((g.tod + dt / 1200) % 1);
+  g.update(dt); g.render();
+  fpsN++; fpsT += dt; if (fpsT > 0.5) { fps = Math.round(fpsN / fpsT); fpsN = 0; fpsT = 0; }
+  hud.textContent = `${fps} fps\nxyz ${g.pos.x.toFixed(1)} ${g.pos.y.toFixed(1)} ${g.pos.z.toFixed(1)}${g.fly ? "  [fly]" : ""}\n${g.stats.blocks.toLocaleString()} blocks · ${g.stats.faces.toLocaleString()} faces`;
+  requestAnimationFrame(frame);
+}
+requestAnimationFrame(frame);
+</script>
+</body></html>
